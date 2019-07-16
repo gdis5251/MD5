@@ -1,4 +1,6 @@
 #pragma once
+#include <iostream>
+#include <cstring>
 #include <cmath>
 
 const int N = 64;
@@ -31,9 +33,31 @@ private:
         return (num << n) | (num >> (32 - n));
     }
 
-    for (int i = 0; i < 64; i++)
+
+    // 最后一块数据拼接
+    void calculateMD5Final()
     {
-        _k[i] = (size_t)(abs(sin(i + 1)) * pow(2, 32));
+        // lastByte_ < 64Byte
+        // 表示最后一块数据的大小
+        unsigned char *p = chunk_ + lastByte_;
+        // 填充位前 8 位：1000 0000  0x80
+        *p++ = 0x80;
+        
+        // 剩余多少个字节需要填充
+        size_t remainFillByte = chunk_byte_ - lastByte_ - 1;
+        if (remainFillByte < 8)
+        {
+            memset(p, 0, remainFillByte);
+            calculateMD5((size_t *)chunk_);
+            memset(chunk_, 0, chunk_byte_);
+        }
+        else
+        {
+            memset(p, 0, remainFillByte);
+
+        }
+        // 最后 64 bit 存放原始文档的大小
+        ((unsigned long long *)chunk_)[7] = totalByte_ * 8;
     }
 
     void calculateMD5(size_t *chunk)
@@ -43,6 +67,11 @@ private:
         size_t b = b_;
         size_t c = c_;
         size_t d = d_;
+
+        for (int i = 0; i < 64; i++)
+        {
+            k_[i] = (size_t)(abs(sin(i + 1)) * pow(2, 32));
+        }
 
         // 哈希函数的返回值
         size_t f;
@@ -106,4 +135,8 @@ private:
     // 这个数组分成四个部分，16 个一组。对一个 512 比特的数据块进行 4 字节为单位的划分
     // 每组都保存着 某一块的编号
     unsigned char chunk_[N];
+
+    size_t lastByte_;
+
+    unsigned long long totalByte_;
 };
