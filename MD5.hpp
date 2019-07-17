@@ -1,5 +1,7 @@
 #pragma once
 #include <iostream>
+#include <string>
+#include <fstream>
 #include <cstring>
 #include <cmath>
 
@@ -7,6 +9,79 @@ const int N = 64;
 
 class MD5
 {
+public:
+    MD5()
+        :chunk_byte_(N)
+    {
+        a_ = 0x67452301;
+        b_ = 0xefcdab89;
+        c_ = 0x98badcfe;
+        d_ = 0x10325476; 
+
+        size_t s[] = { 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,  
+                     5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20,  
+                     4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,  
+                     6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21  };
+        memcpy(shf_, s, sizeof(s));
+
+        for (size_t i = 0; i < 64; i++)
+        {
+            k_[i] = pow(2.0, 32) * abs(sin(i + 1.0));
+        }
+
+        memset(chunk_, 0, chunk_byte_);
+        lastByte_ = totalByte_ = 0;
+    }
+
+
+    std::string getFileMD5(const char* filename)
+    {
+        std::ifstream fin(filename, std::ifstream::binary);
+        if (fin.is_open())
+        {
+            while (!fin.eof())
+            {
+                fin.read((char *)chunk_, chunk_byte_);
+                if (chunk_byte_ != (const size_t)fin.gcount())
+                {
+                    // 已经读到最后一块数据了
+                    break;
+                }
+
+                totalByte_ += chunk_byte_;
+                calculateMD5((size_t *)chunk_);
+            }
+
+            // 循环结束说明读到最后一块数据
+            lastByte_ = fin.gcount();
+            totalByte_ += lastByte_;
+            calculateMD5Final();
+        }
+
+        return changeHex(a_) + changeHex(b_) + changeHex(c_) + changeHex(d_);
+    }
+
+    std::string getStringMD5(const std::string& str)
+    {
+        if (str.empty())
+        {
+            return "";
+        }
+        
+        unsigned char *pstr = (unsigned char*)str.c_str();
+        size_t numChunk = str.size() / chunk_byte_;
+        for (size_t i = 0; i < numChunk; i++)
+        {
+            totalByte_ += chunk_byte_;
+            calculateMD5((size_t *)pstr + i * chunk_byte_);
+        }
+
+        lastByte_ = str.size() % chunk_byte_;
+        memcpy(chunk_, pstr + totalByte_, lastByte_);
+        calculateMD5Final();
+
+        return changeHex(a_) +changeHex(b_) + changeHex(c_) + changeHex(d_);
+    }
 private:
     inline size_t F(size_t b, size_t c, size_t d)
     {
@@ -68,10 +143,7 @@ private:
         size_t c = c_;
         size_t d = d_;
 
-        for (int i = 0; i < 64; i++)
-        {
-            k_[i] = (size_t)(abs(sin(i + 1)) * pow(2, 32));
-        }
+        //TODO 感觉这个要放在构造函数里
 
         // 哈希函数的返回值
         size_t f;
@@ -116,6 +188,27 @@ private:
         d_ += d;
     }
 
+
+    // 把整型转换成16进制字符串
+    std::string changeHex(size_t num)
+    {
+        static std::string strMap = "0123456789abcdef";
+        std::string ret;
+        std::string byteStr;
+        
+        for (int i = 0; i < 4; i++)
+        {
+            size_t b = num >> (i * 8) & 0xff;
+            for (int j = 0; j < 2; j++)
+            {
+                byteStr.insert(0, 1, strMap[b % 16]);
+                b /= 16;
+            }
+            ret += byteStr;
+        }
+
+        return ret;
+    }
 private:
     size_t a_;
     size_t b_;
@@ -125,7 +218,7 @@ private:
     size_t k_[N];
 
     // 循环移位
-    size_t shf_[N];
+    size_t shf_[N];  
 
 
     // 这是一个定值
@@ -138,5 +231,6 @@ private:
 
     size_t lastByte_;
 
+    // 原文档的长度
     unsigned long long totalByte_;
 };
