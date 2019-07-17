@@ -19,9 +19,9 @@ public:
         d_ = 0x10325476; 
 
         size_t s[] = { 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,  
-                     5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20,  
-                     4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,  
-                     6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21  };
+                       5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20,  
+                       4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,  
+                       6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21  };
         memcpy(shf_, s, sizeof(s));
 
         for (size_t i = 0; i < 64; i++)
@@ -30,31 +30,31 @@ public:
         }
 
         memset(chunk_, 0, chunk_byte_);
-        lastByte_ = totalByte_ = 0;
+        last_byte_ = total_byte_ = 0;
     }
 
 
     std::string getFileMD5(const char* filename)
     {
-        std::ifstream fin(filename, std::ifstream::binary);
-        if (fin.is_open())
+        std::ifstream file(filename, std::ifstream::binary);
+        if (file.is_open())
         {
-            while (!fin.eof())
+            while (!file.eof())
             {
-                fin.read((char *)chunk_, chunk_byte_);
-                if (chunk_byte_ != (const size_t)fin.gcount())
+                file.read((char *)chunk_, chunk_byte_);
+                if (chunk_byte_ != file.gcount())
                 {
                     // 已经读到最后一块数据了
                     break;
                 }
 
-                totalByte_ += chunk_byte_;
+                total_byte_ += chunk_byte_;
                 calculateMD5((size_t *)chunk_);
             }
 
             // 循环结束说明读到最后一块数据
-            lastByte_ = fin.gcount();
-            totalByte_ += lastByte_;
+            last_byte_ = file.gcount();
+            total_byte_ += last_byte_;
             calculateMD5Final();
         }
 
@@ -69,15 +69,18 @@ public:
         }
         
         unsigned char *pstr = (unsigned char*)str.c_str();
-        size_t numChunk = str.size() / chunk_byte_;
-        for (size_t i = 0; i < numChunk; i++)
+        size_t num_chunk = str.size() / chunk_byte_;
+        for (size_t i = 0; i < num_chunk; i++)
         {
-            totalByte_ += chunk_byte_;
+            total_byte_ += chunk_byte_;
             calculateMD5((size_t *)pstr + i * chunk_byte_);
         }
 
-        lastByte_ = str.size() % chunk_byte_;
-        memcpy(chunk_, pstr + totalByte_, lastByte_);
+        last_byte_ = str.size() % chunk_byte_;
+        // memcpy(chunk_, pstr + total_byte_, last_byte_);
+        // TODO
+        total_byte_ += last_byte_;
+        memcpy(chunk_, pstr, last_byte_);
         calculateMD5Final();
 
         return changeHex(a_) +changeHex(b_) + changeHex(c_) + changeHex(d_);
@@ -112,14 +115,14 @@ private:
     // 最后一块数据拼接
     void calculateMD5Final()
     {
-        // lastByte_ < 64Byte
+        // last_byte_ < 64Byte
         // 表示最后一块数据的大小
-        unsigned char *p = chunk_ + lastByte_;
+        unsigned char *p = chunk_ + last_byte_;
         // 填充位前 8 位：1000 0000  0x80
         *p++ = 0x80;
         
         // 剩余多少个字节需要填充
-        size_t remainFillByte = chunk_byte_ - lastByte_ - 1;
+        size_t remainFillByte = chunk_byte_ - last_byte_ - 1;
         if (remainFillByte < 8)
         {
             memset(p, 0, remainFillByte);
@@ -129,10 +132,10 @@ private:
         else
         {
             memset(p, 0, remainFillByte);
-
         }
         // 最后 64 bit 存放原始文档的大小
-        ((unsigned long long *)chunk_)[7] = totalByte_ * 8;
+        ((unsigned long long *)chunk_)[7] = total_byte_ * 8;
+        calculateMD5((size_t *)chunk_);
     }
 
     void calculateMD5(size_t *chunk)
@@ -142,8 +145,6 @@ private:
         size_t b = b_;
         size_t c = c_;
         size_t d = d_;
-
-        //TODO 感觉这个要放在构造函数里
 
         // 哈希函数的返回值
         size_t f;
@@ -192,19 +193,22 @@ private:
     // 把整型转换成16进制字符串
     std::string changeHex(size_t num)
     {
-        static std::string strMap = "0123456789abcdef";
+        static std::string str_map = "0123456789abcdef";
         std::string ret;
-        std::string byteStr;
+        std::string byte_str;
         
         for (int i = 0; i < 4; i++)
         {
-            size_t b = num >> (i * 8) & 0xff;
+            // 这个 clear 非常重要，每次进来要清空一下
+            // 不然这次的相加，会把上一次的带上
+            byte_str.clear();
+            size_t b = (num >> (i * 8)) & 0xff;
             for (int j = 0; j < 2; j++)
             {
-                byteStr.insert(0, 1, strMap[b % 16]);
+                byte_str.insert(0, 1, str_map[b % 16]);
                 b /= 16;
             }
-            ret += byteStr;
+            ret += byte_str;
         }
 
         return ret;
@@ -229,8 +233,8 @@ private:
     // 每组都保存着 某一块的编号
     unsigned char chunk_[N];
 
-    size_t lastByte_;
+    size_t last_byte_;
 
     // 原文档的长度
-    unsigned long long totalByte_;
+    unsigned long long total_byte_;
 };
