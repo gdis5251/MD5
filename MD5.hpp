@@ -30,7 +30,7 @@ public:
         }
 
         memset(chunk_, 0, chunk_byte_);
-        last_byte_ = total_byte_ = 0;
+        total_byte_ = last_byte_ = 0;
     }
 
 
@@ -67,21 +67,20 @@ public:
         {
             return "";
         }
-        
-        unsigned char *pstr = (unsigned char*)str.c_str();
-        size_t num_chunk = str.size() / chunk_byte_;
-        for (size_t i = 0; i < num_chunk; i++)
+        else
         {
-            total_byte_ += chunk_byte_;
-            calculateMD5((size_t *)pstr + i * chunk_byte_);
-        }
+            unsigned char *pstr = (unsigned char *)str.c_str();
+            size_t num_chunk = str.size() / chunk_byte_;
+            for (size_t i = 0; i < num_chunk; i++)
+            {
+                total_byte_ += chunk_byte_;
+                calculateMD5((size_t *)pstr + (i * chunk_byte_));
+            }
 
-        last_byte_ = str.size() % chunk_byte_;
-        // memcpy(chunk_, pstr + total_byte_, last_byte_);
-        // TODO
-        total_byte_ += last_byte_;
-        memcpy(chunk_, pstr, last_byte_);
-        calculateMD5Final();
+            last_byte_ = str.size() % chunk_byte_;
+            memcpy(chunk_, pstr + total_byte_, last_byte_);
+            calculateMD5Final();
+        }
 
         return changeHex(a_) +changeHex(b_) + changeHex(c_) + changeHex(d_);
     }
@@ -159,17 +158,17 @@ private:
                 f = F(b, c, d);
                 g = i;
             }
-            else if (i < 32)
+            else if (i >= 16 && i < 32)
             {
                 f = G(b, c, d);
                 g = (5 * i + 1) % 16;
             }
-            else if (i < 48)
+            else if (i >= 32 && i < 48)
             {
                 f = H(b, c, d);
                 g = (3 * i + 5) % 16;
             }
-            else if (i < 64)
+            else if (i >= 48 && i < 64)
             {
                 f = I(b, c, d);
                 g = (7 * i) % 16;
