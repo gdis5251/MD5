@@ -1,24 +1,28 @@
 #include "MD5.hpp"
-
-int main(int argc, char* argv[])
-{
-    if (argc != 3)
-    {
-        std::cout << argv[0] << "\tfilename" << std::endl;
-        return 1;
+//   0     1  2
+// ./md5  -s str1 str2
+// -s字符串md5   -f 文件名计算md5
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        return help();
     }
-    
-    MD5 md5;
-    int option = *argv[1];
-    switch(option)
-    {
-    case '0':
-        std::cout << md5.getFileMD5(argv[2]) << std::endl;
-        break;
-    case '1':
-        std::cout << md5.getStringMD5(argv[2]) << std::endl;
-    default:
-        break;
+
+    std::string opt = argv[1];
+    if (opt == "-s") {
+        for (int i = 2; i < argc; ++i) {
+            MD5 m;
+            m.StrMD5(argv[i]);
+            std::cout << m.getMD5() << std::endl;
+        }
+
+    } else if (opt == "-f") {
+        for (int i = 2; i < argc; ++i) {
+            MD5 m;
+            m.FileMD5(argv[i]);
+            std::cout << m.getMD5() << std::endl;
+        }
+    } else {
+        return help();
     }
 
     return 0;

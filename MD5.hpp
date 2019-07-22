@@ -1,239 +1,258 @@
-#pragma once
 #include <iostream>
-#include <string>
+#include <sstream>
 #include <fstream>
-#include <cstring>
+
+#include <cstdio>
 #include <cmath>
+#include <cstdlib>
+#include <cstring>
 
-const int N = 64;
+#include <fcntl.h>
+#include <unistd.h>
+#include <iomanip>
 
-class MD5
-{
+//512bit = 64Byte
+//64Byte = 16 * 4 Byte
+static const int N = 64;
+
+
+class MD5 {
 public:
-    MD5()
-        :chunk_byte_(N)
-    {
-        a_ = 0x67452301;
-        b_ = 0xefcdab89;
-        c_ = 0x98badcfe;
-        d_ = 0x10325476; 
 
-        size_t s[] = { 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,  
-                       5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20, 5, 9,  14, 20,  
-                       4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,  
-                       6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21  };
-        memcpy(shf_, s, sizeof(s));
-
-        for (size_t i = 0; i < 64; i++)
-        {
-            k_[i] = pow(2.0, 32) * abs(sin(i + 1.0));
-        }
-
-        memset(chunk_, 0, chunk_byte_);
-        total_byte_ = last_byte_ = 0;
+    ~MD5() {
+        delete[](block);
     }
 
+    void StrMD5(const char *s) {
+        str = s;
+        A = 0x67452301;
+        B = 0xefcdab89;
+        C = 0x98badcfe;
+        D = 0x10325476;
+        CalculateStr();
+    }
 
-    std::string getFileMD5(const char* filename)
-    {
-        std::ifstream file(filename, std::ifstream::binary);
-        if (file.is_open())
-        {
-            while (!file.eof())
-            {
-                file.read((char *)chunk_, chunk_byte_);
-                if (chunk_byte_ != file.gcount())
-                {
-                    // 已经读到最后一块数据了
-                    break;
-                }
+    void FileMD5(const char *p) {
+        path = p;
+        A = 0x67452301;
+        B = 0xefcdab89;
+        C = 0x98badcfe;
+        D = 0x10325476;
+        CalculateFile();
+    }
 
-                total_byte_ += chunk_byte_;
-                calculateMD5((size_t *)chunk_);
+    //输出是要注意大小端
+    std::string getMD5() {
+        std::stringstream ss;
+#if 1
+        uint64_t buf[4] = {A, B, C, D};
+        for (int i = 0; i < 4; ++i) {
+            unsigned char *tmp = (unsigned char *) &buf[i];
+            for (int j = 0; j < 4; ++j) {
+                ss << std::setfill('0') << std::setw(2) << std::hex << (int) tmp[j];
             }
-
-            // 循环结束说明读到最后一块数据
-            last_byte_ = file.gcount();
-            total_byte_ += last_byte_;
-            calculateMD5Final();
         }
-
-        return changeHex(a_) + changeHex(b_) + changeHex(c_) + changeHex(d_);
+#endif
+        std::string res = ss.str();
+        return res;
     }
 
-    std::string getStringMD5(const std::string& str)
-    {
-        if (str.empty())
-        {
-            return "";
-        }
-        else
-        {
-            unsigned char *pstr = (unsigned char *)str.c_str();
-            size_t num_chunk = str.size() / chunk_byte_;
-            for (size_t i = 0; i < num_chunk; i++)
-            {
-                total_byte_ += chunk_byte_;
-                calculateMD5((size_t *)pstr + (i * chunk_byte_));
-            }
-
-            last_byte_ = str.size() % chunk_byte_;
-            memcpy(chunk_, pstr + total_byte_, last_byte_);
-            calculateMD5Final();
-        }
-
-        return changeHex(a_) +changeHex(b_) + changeHex(c_) + changeHex(d_);
-    }
 private:
-    inline size_t F(size_t b, size_t c, size_t d)
-    {
-        return (b & c) | ((~b) & d);
-    }
-    
-    inline size_t G(size_t b, size_t c, size_t d)
-    {
-        return (b & d) | ( c & (~d));
-    }
-    
-    inline size_t H(size_t b, size_t c, size_t d)
-    {
-        return b ^ c ^ d;
-    }
-
-    inline size_t I(size_t b, size_t c, size_t d)
-    {
-        return c ^ (b | (~d));
-    }
-
-    inline size_t shiftLeftRotate(size_t num, size_t n)
-    {
-        return (num << n) | (num >> (32 - n));
-    }
-
-
-    // 最后一块数据拼接
-    void calculateMD5Final()
-    {
-        // last_byte_ < 64Byte
-        // 表示最后一块数据的大小
-        unsigned char *p = chunk_ + last_byte_;
-        // 填充位前 8 位：1000 0000  0x80
-        *p++ = 0x80;
-        
-        // 剩余多少个字节需要填充
-        size_t remainFillByte = chunk_byte_ - last_byte_ - 1;
-        if (remainFillByte < 8)
-        {
-            memset(p, 0, remainFillByte);
-            calculateMD5((size_t *)chunk_);
-            memset(chunk_, 0, chunk_byte_);
+    //todo:使用stringstream 和 fstream 合并str和file的计算函数
+    void CalculateStr() {
+        if (block != nullptr) {
+            delete[] (block);
+            block = nullptr;
         }
-        else
-        {
-            memset(p, 0, remainFillByte);
+        unsigned long length = 0;
+        while (1) {
+            int len = readstr(str);
+            if (len == 64) {
+                length += len;
+                str += len;
+                calculateChunk((uint32_t *) chunk);
+            } else {
+                length += len;
+                file_length = length * 8;
+                unsigned char *rep = fill(len);
+                calculateChunk((uint32_t *) chunk);
+                if (rep) {
+                    calculateChunk((uint32_t *) chunk);
+                }
+                break;
+            }
         }
-        // 最后 64 bit 存放原始文档的大小
-        ((unsigned long long *)chunk_)[7] = total_byte_ * 8;
-        calculateMD5((size_t *)chunk_);
     }
 
-    void calculateMD5(size_t *chunk)
-    {
-        // 获取 A B C D 当前值
-        size_t a = a_;
-        size_t b = b_;
-        size_t c = c_;
-        size_t d = d_;
+    void CalculateFile() {
+        if (block != nullptr) {
+            delete[](block);
+            block = nullptr;
+        }
+        unsigned long length = 0;
+        std::fstream fs;
+        fs.open(path, std::fstream::binary | std::fstream::in);
+        while (1) {
+            fs.read((char *) chunk, 64);
+            // 如果可以读满 64 个字节说明不是最后一块
+            // 不需要填充
+            if (fs.gcount() == 64) {
+                length += fs.gcount();
+                calculateChunk((uint32_t *) chunk);
+            } else { // 若读不到 64 个字节，说明已经是最后一块了, 对其进行填充
+                length += fs.gcount();
+                file_length = length * 8;
+                unsigned char *rep = fill(fs.gcount());
+                calculateChunk((uint32_t *) chunk);
+                if (rep) {
+                    calculateChunk((uint32_t *) rep);
+                }
+                break;
+            }
+        }
+    }
 
-        // 哈希函数的返回值
-        size_t f;
-        // chunk[g]
-        size_t g;
 
-        // 64 次变换： 4 轮操作； 每一轮操作分为 16 次子操作
-        for (size_t i = 0; i < 64; i++)
-        {
-            if (i >= 0  && i < 16)
-            {
-                f = F(b, c, d);
+    //填充最后的一个64字节块
+    unsigned char *fill(int n) {
+        // 若当前已经 大于等于56 字节了，则需要填充完当前字符串之后
+        // 在需要重新生成一个字符串并计算
+        if (n >= 56) {  
+            int len = 64 - n;
+            chunk[n] = 0x80;//补一个1其他用0填充
+            for (int i = n + 1; i < 64; ++i) {
+                chunk[i] = 0x0;
+            }
+            block = new unsigned char[64]();
+            unsigned char *slide = block + 56;
+            // 最后 8 个字节存放文件的长度
+            (*((uint64_t *) slide)) = file_length; 
+        } else {   //小于488补到488
+            chunk[n] = 0x80;
+            for (int i = n + 1; i < 57; ++i) {
+                chunk[i] = 0x0;
+            }
+            block = nullptr;
+            unsigned char *slide = chunk + 56;
+            (*((uint64_t *) slide)) = file_length; //填充
+        }
+        return block;
+    }
+
+    //对每块进行64次计算
+    void calculateChunk(uint32_t *chk) {  // 512
+        uint32_t a = A, b = B, c = C, d = D;
+        uint32_t logic, g, tmp;
+
+        for (uint32_t i = 0; i < 64; ++i) {
+            if (i >= 0 && i < 16) {  // a b c d循环左移16次 用F
+                logic = F(b, c, d);
                 g = i;
-            }
-            else if (i >= 16 && i < 32)
-            {
-                f = G(b, c, d);
+            } else if (i >= 16 && i < 32) {     // 用G
+                logic = G(b, c, d);
                 g = (5 * i + 1) % 16;
-            }
-            else if (i >= 32 && i < 48)
-            {
-                f = H(b, c, d);
+            } else if (i >= 32 && i < 48) {
+                logic = H(b, c, d);
                 g = (3 * i + 5) % 16;
-            }
-            else if (i >= 48 && i < 64)
-            {
-                f = I(b, c, d);
+            } else {
+                logic = I(b, c, d);
                 g = (7 * i) % 16;
             }
 
-            size_t dtmp = d;
+            tmp = d;
             d = c;
             c = b;
-            b = b + shiftLeftRotate(a + f + k_[i] + chunk[g], shf_[i]);
-            a = dtmp;
+            b = b + shifting(a + logic + chk[g] + k[i], s[i]);
+            a = tmp;
         }
 
-        // 最后更新 A B C D
-        a_ += a;
-        b_ += b;
-        c_ += c;
-        d_ += d;
+        A += a;
+        B += b;
+        C += c;
+        D += d;
     }
 
+    uint32_t F(uint32_t x, uint32_t y, uint32_t z) {
+        return (x & y) | ((~x) & z);
+    }
 
-    // 把整型转换成16进制字符串
-    std::string changeHex(size_t num)
-    {
-        static std::string str_map = "0123456789abcdef";
-        std::string ret;
-        std::string byte_str;
-        
-        for (int i = 0; i < 4; i++)
-        {
-            // 这个 clear 非常重要，每次进来要清空一下
-            // 不然这次的相加，会把上一次的带上
-            byte_str.clear();
-            size_t b = (num >> (i * 8)) & 0xff;
-            for (int j = 0; j < 2; j++)
-            {
-                byte_str.insert(0, 1, str_map[b % 16]);
-                b /= 16;
+    uint32_t G(uint32_t x, uint32_t y, uint32_t z) {
+        return (x & z) | (y & (~z));
+    }
+
+    uint32_t H(uint32_t x, uint32_t y, uint32_t z) {
+        return x ^ y ^ z;
+    }
+
+    uint32_t I(uint32_t x, uint32_t y, uint32_t z) {
+        return y ^ (x | (~z));
+    }
+
+    uint32_t shifting(uint32_t i, int n) {
+        return (i << n) ^ (i >> (32 - n));
+    }
+
+    int readstr(const char *str) {
+        int len = 0;
+        for (int i = 0; i < 64; ++i) {
+            if (str[i] == 0) {
+                break;
             }
-            ret += byte_str;
+            chunk[i] = (unsigned char) str[i];
+            ++len;
         }
-
-        return ret;
+        return len;
     }
+
 private:
-    size_t a_;
-    size_t b_;
-    size_t c_;
-    size_t d_;
+    const char *path = nullptr;
+    const char *str = nullptr;
 
-    size_t k_[N];
-
-    // 循环移位
-    size_t shf_[N];  
+    uint32_t A = 0x67452301;
+    uint32_t B = 0xefcdab89;
+    uint32_t C = 0x98badcfe;
+    uint32_t D = 0x10325476;
 
 
-    // 这是一个定值
-    // 表示每个块的大小-> 512
-    const size_t chunk_byte_;
+    uint32_t k[N] = {0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee,
+                     0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501,
+                     0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be,
+                     0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821,
+                     0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa,
+                     0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8,
+                     0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed,
+                     0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a,
+                     0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c,
+                     0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70,
+                     0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05,
+                     0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665,
+                     0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039,
+                     0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
+                     0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1,
+                     0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391};
+    //用来计算循环左移多少位
+    uint32_t s[N] = {7, 12, 17, 22, 7, 12, 17, 22,
+                     7, 12, 17, 22, 7, 12, 17, 22,
+                     5, 9, 14, 20, 5, 9, 14, 20,
+                     5, 9, 14, 20, 5, 9, 14, 20,
+                     4, 11, 16, 23, 4, 11, 16, 23,
+                     4, 11, 16, 23, 4, 11, 16, 23,
+                     6, 10, 15, 21, 6, 10, 15, 21,
+                     6, 10, 15, 21, 6, 10, 15, 21};
 
-    // 这个数组分成四个部分，16 个一组。对一个 512 比特的数据块进行 4 字节为单位的划分
-    // 每组都保存着 某一块的编号
-    unsigned char chunk_[N];
-
-    size_t last_byte_;
-
-    // 原文档的长度
-    unsigned long long total_byte_;
+    //64字节的块计算hash
+    unsigned char chunk[64] = {0};        //每次计算的块大小
+    unsigned char *block = nullptr;  //最后一块填充的额外部分
+    uint64_t file_length = 0;   //文件bit长度
 };
+
+
+int help() {
+    std::cout << "参数错误!" << std::endl;
+    std::cout << "-s 后面加要计算md5的字符串数量不限" << std::endl;
+    std::cout << "./md5 -s str1 str2 ....." << std::endl;
+    std::cout << "-f 后面加要计算md5的文件名数量不限" << std::endl;
+    std::cout << "./md5 -f filename1 filename2 ..." << std::endl;
+    return 1;
+}
+
